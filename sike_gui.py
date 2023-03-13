@@ -1,18 +1,24 @@
 import tkinter as tk
 from tkinter import ttk
-from tkinter import filedialog as fd
-
+from tkinter import filedialog as fd, messagebox, Scrollbar, Text
+from threading import Thread
 import comunication.mim as mim
 
-WORK_MODE= ""
+WORK_MODE = ""
 
-ADDR_IP= ""
+ADDR_IP = ""
 PORT = ""
 KEY_PATH = ""
 
 
 def frame_changer(frame_name):
     frame_name.tkraise()
+
+
+def threadStarter():
+    # TODO errors
+    thread_comm = Thread(target=mim.try_connect, args=(WORK_MODE, KEY_PATH, PORT, ADDR_IP,))
+    thread_comm.start()
 
 
 class App(tk.Tk):
@@ -84,7 +90,7 @@ class App(tk.Tk):
 
         # iterating through a tuple consisting
         # of the different page layouts
-        for F in (StartFrame, ConnectFrame):
+        for F in (StartFrame, ConnectFrame, ChatFrame):
             frame = F(container, self)
 
             # initializing frame of that object from
@@ -120,11 +126,22 @@ class PanelFrame(ttk.Frame):
         self.controller = controller
         label = ttk.Label(self, text=title, style='TLabel')
         label.configure(font=("Roboto", 24, 'bold'))
-        label.grid(column=0, row=0, columnspan=3, pady=45, padx=85, sticky=tk.W)
+        label.pack(side="top", fill="x", pady=20, padx=40)
 
-    def create_button(self, button_label: str):
-        button = ttk.Button(self, text=button_label, style='TButton')
+    def create_button(self, container, button_label: str):
+        button = ttk.Button(container, text=button_label, style='TButton')
         return button
+
+    def create_text_input(self, container, input_label: str, input_holder: tk.StringVar):
+        input_frame = ttk.Frame(container, style='TFrame')
+        ttk.Label(input_frame, text=input_label).pack(fill='x', expand=True, pady=3)
+        ttk.Entry(input_frame,
+                  textvariable=input_holder,
+                  width=26,
+                  style='TEntry',
+                  font=('Roboto', 14)
+                  ).pack(fill='x', expand=True)
+        return input_frame
 
 
 class StartFrame(PanelFrame):
@@ -138,18 +155,18 @@ class StartFrame(PanelFrame):
             value='server',
             variable=self.selected_mode
         )
-        s.grid(column=0, row=1, columnspan=3, pady=45, padx=85, sticky=tk.W)
+        s.pack(side="top", fill="x", pady=45, padx=85)
         r = ttk.Radiobutton(
             self,
             text='CLIENT',
             value='client',
             variable=self.selected_mode
         )
-        r.grid(column=0, row=2, columnspan=3, pady=45, padx=85, sticky=tk.W)
+        r.pack(side="top", fill="x", pady=45, padx=85)
 
-        button_start = self.create_button('START')
+        button_start = self.create_button(self, 'START')
         button_start.configure(command=self.star_button_action)
-        button_start.grid(column=1, row=3, pady=45, padx=190)
+        button_start.pack(side="top", fill="x", pady=45, padx=190, )
 
     def star_button_action(self):
         global WORK_MODE
@@ -165,29 +182,15 @@ class ConnectFrame(PanelFrame):
         self.key_path = tk.StringVar()
         self.select_file_img = tk.PhotoImage(file='./assets/icons8-share-rounded-90.png').subsample(3, 3)
 
-        self.create_text_input("Address IP", self.addr_ip).grid(column=0, row=1, columnspan=3, pady=5, padx=85,
-                                                                sticky=tk.W)
-        self.create_text_input("Port", self.port).grid(column=0, row=2, columnspan=3, pady=5, padx=85,
-                                                       sticky=tk.W)
+        self.create_text_input(self, "Address IP", self.addr_ip).pack(side="top", fill="x", pady=5, padx=85)
+        self.create_text_input(self, "Port", self.port).pack(side="top", fill="x", pady=5, padx=85)
 
-        self.create_file_input().grid(column=0, row=3, columnspan=5, pady=3, padx=85,
-                                      sticky=tk.W)
+        self.create_file_input().pack(side="top", fill="x", pady=3, padx=85)
 
-        button_start = self.create_button('CONNECT')
+        button_start = self.create_button(self, 'CONNECT')
         button_start.configure(command=self.star_button_action)
 
-        button_start.grid(column=1, row=4, pady=45, padx=190)
-
-    def create_text_input(self, input_label: str, input_holder: tk.StringVar):
-        input_frame = ttk.Frame(self, style='TFrame')
-        ttk.Label(input_frame, text=input_label).pack(fill='x', expand=True, pady=3)
-        ttk.Entry(input_frame,
-                  textvariable=input_holder,
-                  width=26,
-                  style='TEntry',
-                  font=('Roboto', 14)
-                  ).pack(fill='x', expand=True)
-        return input_frame
+        button_start.pack(side="top", fill="x", pady=45, padx=190)
 
     def select_file(self, label):
         filetypes = (
@@ -224,5 +227,34 @@ class ConnectFrame(PanelFrame):
         PORT = self.port.get()
         global KEY_PATH
         KEY_PATH = self.key_path
-        mim.try_connect(WORK_MODE,KEY_PATH, PORT, ADDR_IP )
-        self.controller.show_frame(ConnectFrame, StartFrame)
+        # TODO thread start
+        threadStarter()
+        self.controller.show_frame(ConnectFrame, ChatFrame)
+
+
+class ChatFrame(PanelFrame):
+    def __init__(self, container, controller):
+        super().__init__(container, controller, 'ChatRoom')
+        # noinspection PyStatementEffect
+        self.msg_to_send = tk.StringVar()
+        self.select_file_img = tk.PhotoImage(file='./assets/icons8-send-96.png').subsample(3, 3)
+        all_frame = ttk.Frame(self)
+        all_frame.pack(side="top", fill="x", pady=3, padx=85)
+        #v = Scrollbar(self, orient='vertical')
+        chat_frame = ttk.Frame(all_frame, style='TFrame')
+        chat_frame.pack(side="top", fill="both", expand=True)
+        send_frame = ttk.Frame(all_frame,  style='TFrame')
+        send_frame.pack(side="bottom", fill="x", expand=True)
+        ttk.Entry(send_frame,
+                  textvariable=self.msg_to_send,
+                  #width=26,
+                  style='TEntry',
+                  font=('Roboto', 14)
+                  ).pack(fill='x', expand=True, side="left")
+        send_button = ttk.Button(
+            send_frame,
+            image=self.select_file_img,
+            #command=,
+            style="FI.TButton"
+        )
+        send_button.pack(side="right")
