@@ -4,22 +4,46 @@ from tkinter import filedialog as fd, messagebox, Scrollbar, Text
 from threading import Thread
 import comunication.mim as mim
 
-WORK_MODE = ""
+WORK_MODE = None
 
-ADDR_IP = ""
-PORT = ""
-KEY_PATH = ""
+ADDR_IP = None
+PORT = None
+KEY_PATH = None
+
+TEXT_VIEW = None
+
+Lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur sem lacus, varius vel pellentesque vel, consectetur eget lectus. Etiam at libero et lacus ornare faucibus a sed lorem. Etiam eleifend sem ac semper molestie. Maecenas pharetra posuere mauris dapibus interdum. Nunc vel nulla quam. Pellentesque cursus lobortis nibh, et efficitur ligula commodo nec. Aliquam libero nisi, commodo porttitor ipsum et, venenatis suscipit turpis. Quisque tempus nisl urna, ut bibendum nunc sagittis a. Nulla imperdiet, lorem eu aliquet tempor, est leo fermentum sapien, cursus viverra odio urna vitae quam. Nam sit amet nisl sed magna volutpat imperdiet."
 
 
 def frame_changer(frame_name):
     frame_name.tkraise()
 
-
+'''
 def threadStarter():
     # TODO errors
+
+    global WORK_MODE
+    global KEY_PATH
+    global ADDR_IP
+    print(WORK_MODE)
+    print(KEY_PATH)
+    print(ADDR_IP)
     thread_comm = Thread(target=mim.try_connect, args=(WORK_MODE, KEY_PATH, PORT, ADDR_IP,))
     thread_comm.start()
+'''
 
+def chat_bubble(sender, text: str):
+    global TEXT_VIEW
+    TEXT_VIEW.config(state='normal')
+    if sender == "me":
+        TEXT_VIEW.insert('end', "\n\n\tME -->")
+    else:
+        TEXT_VIEW.insert('end', "\n\tBOB-->")
+    TEXT_VIEW.insert('end', "\n" + text)
+    TEXT_VIEW.config(state='disabled')
+
+def send_message():
+    pass
 
 class App(tk.Tk):
     def __init__(self):
@@ -221,14 +245,18 @@ class ConnectFrame(PanelFrame):
         return input_frame
 
     def star_button_action(self):
+
         global ADDR_IP
         ADDR_IP = self.addr_ip.get()
         global PORT
-        PORT = self.port.get()
+        if len(self.port.get()) != 0:
+            PORT = self.port.get()
         global KEY_PATH
         KEY_PATH = self.key_path
-        # TODO thread start
-        threadStarter()
+
+        thread_comm = Thread(target=mim.try_connect, args=(WORK_MODE, KEY_PATH, PORT, ADDR_IP,))
+        thread_comm.start()
+
         self.controller.show_frame(ConnectFrame, ChatFrame)
 
 
@@ -238,23 +266,46 @@ class ChatFrame(PanelFrame):
         # noinspection PyStatementEffect
         self.msg_to_send = tk.StringVar()
         self.select_file_img = tk.PhotoImage(file='./assets/icons8-send-96.png').subsample(3, 3)
+
         all_frame = ttk.Frame(self)
         all_frame.pack(side="top", fill="x", pady=3, padx=85)
-        #v = Scrollbar(self, orient='vertical')
-        chat_frame = ttk.Frame(all_frame, style='TFrame')
+
+        chat_frame = ttk.Frame(all_frame, style='TFrame', borderwidth=1, relief='sunken', height=300)
         chat_frame.pack(side="top", fill="both", expand=True)
-        send_frame = ttk.Frame(all_frame,  style='TFrame')
-        send_frame.pack(side="bottom", fill="x", expand=True)
-        ttk.Entry(send_frame,
+        chat_frame.pack_propagate(False)
+
+        scrollbar = tk.Scrollbar(chat_frame, orient="vertical")
+        scrollbar.pack(side="right", fill="y")
+
+        text_box = tk.Text(
+            chat_frame,
+            state='disabled',
+            width=40,
+            height=20,
+            wrap='word',
+            relief='flat'
+        )
+        text_box.pack(fill="both", expand=True)
+        scrollbar.configure()
+
+        text_box.config(yscrollcommand=scrollbar.set)
+        scrollbar.config(command=text_box.yview)
+        global TEXT_VIEW
+        TEXT_VIEW = text_box
+
+        input_send_frame = ttk.Frame(all_frame, style='TFrame')
+        input_send_frame.pack(side="bottom", fill="x", expand=True)
+        ttk.Entry(input_send_frame,
                   textvariable=self.msg_to_send,
-                  #width=26,
+                  # width=26,
                   style='TEntry',
                   font=('Roboto', 14)
                   ).pack(fill='x', expand=True, side="left")
         send_button = ttk.Button(
-            send_frame,
+            input_send_frame,
             image=self.select_file_img,
-            #command=,
+            # TODO command=,
             style="FI.TButton"
         )
         send_button.pack(side="right")
+
