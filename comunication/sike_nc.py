@@ -8,6 +8,7 @@ import hashlib
 import comunication.sike as sike
 from Crypto.Cipher import AES
 
+#from sike_gui import chat_bubble
 BUFFER_SIZE = 1024
 ENCODING = 'utf-16'
 
@@ -262,7 +263,3 @@ def main():
             raise
     else:
         raise Exception()
-
-
-if __name__ == "__main__":
-    main()
