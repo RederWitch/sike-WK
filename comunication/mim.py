@@ -19,7 +19,7 @@ def client_side(destination, port):
         raise
 
 
-def try_connect(mode: str, key_file, port, address=None, ):
+def try_connect(mode: str, key_file, port, address=None ):
     print(mode)
     nc.FILENAME = key_file
     if not port:

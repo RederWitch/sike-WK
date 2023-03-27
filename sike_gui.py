@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import filedialog as fd, messagebox, Scrollbar, Text
 from threading import Thread
-import comunication.mim as mim
+from comunication.mim import try_connect
 
 WORK_MODE = None
 
@@ -12,7 +12,6 @@ KEY_PATH = None
 
 TEXT_VIEW = None
 
-Lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Curabitur sem lacus, varius vel pellentesque vel, consectetur eget lectus. Etiam at libero et lacus ornare faucibus a sed lorem. Etiam eleifend sem ac semper molestie. Maecenas pharetra posuere mauris dapibus interdum. Nunc vel nulla quam. Pellentesque cursus lobortis nibh, et efficitur ligula commodo nec. Aliquam libero nisi, commodo porttitor ipsum et, venenatis suscipit turpis. Quisque tempus nisl urna, ut bibendum nunc sagittis a. Nulla imperdiet, lorem eu aliquet tempor, est leo fermentum sapien, cursus viverra odio urna vitae quam. Nam sit amet nisl sed magna volutpat imperdiet."
 
 
 def frame_changer(frame_name):
@@ -253,8 +252,9 @@ class ConnectFrame(PanelFrame):
             PORT = self.port.get()
         global KEY_PATH
         KEY_PATH = self.key_path
+        global TEXT_VIEW
 
-        thread_comm = Thread(target=mim.try_connect, args=(WORK_MODE, KEY_PATH, PORT, ADDR_IP,))
+        thread_comm = Thread(target=try_connect, args=(WORK_MODE, KEY_PATH, PORT, ADDR_IP,))
         thread_comm.start()
 
         self.controller.show_frame(ConnectFrame, ChatFrame)

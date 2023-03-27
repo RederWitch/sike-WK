@@ -8,7 +8,6 @@ import hashlib
 import comunication.sike as sike
 from Crypto.Cipher import AES
 
-#from sike_gui import chat_bubble
 BUFFER_SIZE = 1024
 ENCODING = 'utf-16'
 
@@ -229,37 +228,3 @@ class Client(SendMessageBase):
         print('Connection closed.')
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-l", "--listen", help="Listen mode, for inbound connects",
-                        action='store_true')
-    parser.add_argument("-p", "--server-port", default=23456, type=int)
-    parser.add_argument("-ns", "--not-secure", action='store_true')
-    parser.add_argument("--log", type=str, default='INFO')
-    parser.add_argument("destination", nargs='?')
-    parser.add_argument("port", nargs='?', type=int)
-    args = parser.parse_args()
-
-    log_level = getattr(logging, args.log.upper(), None)
-    if not isinstance(log_level, int):
-        raise ValueError('Invalid log level: %s' % args.log)
-    logging.basicConfig(level=log_level, format='%(levelname)s:%(message)s')
-    secure = not args.not_secure
-
-    if args.listen and args.server_port:
-        server = Server(secure=secure)
-        try:
-            server.start(port=args.server_port)
-        except (Exception, KeyboardInterrupt) as e:
-            server.socket.close()
-            print('Connection closed.')
-    elif args.destination and args.port:
-        client = Client(secure=secure)
-        try:
-            client.connect(args.destination, args.port)
-        except (Exception, KeyboardInterrupt) as e:
-            client.socket.close()
-            print('Connection closed.')
-            raise
-    else:
-        raise Exception()
