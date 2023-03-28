@@ -10,7 +10,7 @@ import threading
 import hashlib
 from Crypto.Cipher import AES
 
-import comunication.sike as sike
+import sike as sike
 
 WORK_MODE = None
 
@@ -26,18 +26,18 @@ def frame_changer(frame_name):
 
 
 def chat_bubble(sender, text: str):
+    text_place = '1.0'
     global TEXT_VIEW
     TEXT_VIEW.config(state='normal')
+    TEXT_VIEW.insert(text_place, "\n>" + text)
     if sender == "me":
-        TEXT_VIEW.insert('end', "\n\n\tME -->")
+        TEXT_VIEW.insert(text_place, "\n\n\tME -->")
+    elif sender == "info":
+        TEXT_VIEW.insert(text_place, "\n\n\tINFO-->")
     else:
-        TEXT_VIEW.insert('end', "\n\tBOB-->")
-    TEXT_VIEW.insert('end', "\n" + text)
+        TEXT_VIEW.insert(text_place, "\n\n\tBOB-->")
+
     TEXT_VIEW.config(state='disabled')
-
-
-def send_message():
-    pass
 
 
 class App(tk.Tk):
@@ -306,6 +306,7 @@ class ChatFrame(PanelFrame):
 
     def send_button_action(self):
         text = self.msg_to_send.get()
+        self.msg_to_send.set("")
         chat_bubble("me", text)
         global SOCET
         SOCET.send_msg(text)
@@ -407,8 +408,8 @@ class SendMessageBase:
 
                 data = padding(raw_data).encode(ENCODING)
                 encrypted_data = self.aes.encrypt(data)
-                logging.debug('Sending encrypted message: \n%s\n key: %s', encrypted_data,
-                              self.key)
+                #logging.debug('Sending encrypted message: \n%s\n key: %s', encrypted_data,
+                #             self.key)
                 socket.send(bytes(encrypted_data))
             else:
                 socket.send(bytes(raw_data, ENCODING))
@@ -423,27 +424,32 @@ class Server(SendMessageBase):
         self.socket = socket.socket(socket_family, socket_type)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.connection = None
-        self.aes = None
         self.key = 'Sixteen byte key'
+        self.aes = None
         self.is_secure = secure
         self.sike_api = sike.CtypeSikeApi()
 
     def key_exchange(self):
         print('Exchanging key...')
-        logging.debug('Waiting for public key response...')
+        chat_bubble('info', 'Exchanging key...')
+        #logging.debug('Waiting for public key response...')
         public_key = self.connection.recv(BUFFER_SIZE)
-        logging.debug('Reviced public key: %s', public_key.hex())
+        #logging.debug('Reviced public key: %s', public_key.hex())
         print('Encapsulating key...')
+        chat_bubble('info', 'Encapsulating key...')
         shared_secret, ciphertext = self.sike_api.encapsulate(public_key)
         print('Sending cypher text message...')
+        chat_bubble('info', 'Sending cypher text message...')
         self.connection.sendall(ciphertext)
         print('Waiting for confirmation...')
+        chat_bubble('info', 'Waiting for confirmation...')
         confirmation = self.connection.recv(BUFFER_SIZE)
         if not confirmation == EXCHANGE_CONFIRMATION:
             self.socket.close()
         print('Key exchanged.')
+        chat_bubble('info', 'Key exchanged.')
 
-        logging.debug('Shared secret key is: %s', shared_secret.hex())
+        #logging.debug('Shared secret key is: %s', shared_secret.hex())
         return shared_secret
 
     def send_msg(self, text):
@@ -452,27 +458,33 @@ class Server(SendMessageBase):
     def start(self, port):
         self.socket.bind(('', port))
         print('Listening on port %d...', port)
+        chat_bubble('info', 'Listening on port ' + str(port) + '...')
         self.socket.listen()
         try:
             self.connection, addr = self.socket.accept()
         except KeyboardInterrupt:
             self.socket.close()
             print('Connection closed.')
+            chat_bubble('info', 'Connection Closed')
             sys.exit(1)
 
         with self.connection:
             print('Connected by %s', addr[0])
+            chat_bubble('info', 'Connected by ' + str(addr[0]))
             print("Authorization in progress...")
+            chat_bubble('info', 'Authorization in progress...')
             server_auth_key = load_auth_key()
-            logging.debug("Server key OK hash:")
-            logging.debug(server_auth_key)
+            #logging.debug("Server key OK hash:")
+            #logging.debug(server_auth_key)
             client_auth_key = str(self.connection.recv(BUFFER_SIZE), ENCODING)
-            logging.debug("Client key recived")
+            #logging.debug("Client key recived")
             if server_auth_key != client_auth_key:
                 print('Authorization failed, closing connection')
+                chat_bubble('info', 'Authorization failed')
                 exit(-1)
             else:
                 print('Authorization successful')
+                chat_bubble('info', 'Authorization successful')
                 self.connection.send(bytes('200', ENCODING))
 
             aes = None
@@ -480,19 +492,16 @@ class Server(SendMessageBase):
                 self.key = self.key_exchange()
                 save_auth_key(self.key)
                 aes = AES.new(self.key, AES.MODE_CBC, IV=self.key[:16])
-            '''
-            input_thread = threading.Thread(target=self._send_message, args=[self.connection])
-            input_thread.daemon = True
-            input_thread.start()'''
             try:
                 while True:
                     raw_data = self.connection.recv(BUFFER_SIZE)
                     if self.is_secure:
-                        logging.debug('Received encrypted message: %s', raw_data)
+                        #logging.debug('Received encrypted message: %s', raw_data)
                         decrypted_data = remove_padding(str(aes.decrypt(raw_data), ENCODING))
                         chat_bubble("2", decrypted_data)
-                        _print(decrypted_data)
+                        #_print(decrypted_data)
                     else:
+                        chat_bubble('2', str(raw_data))
                         _print(raw_data)
                     if not raw_data:
                         break
@@ -500,6 +509,7 @@ class Server(SendMessageBase):
                 pass
         self.socket.close()
         print('Connection closed.')
+        chat_bubble('info', 'Connection closed')
 
 
 class Client(SendMessageBase):
@@ -517,22 +527,25 @@ class Client(SendMessageBase):
 
     def key_exchange(self):
         print('Exchanging key...')
-        logging.debug('Generating key pair...')
+        chat_bubble('info', 'Exchanging key')
+        #logging.debug('Generating key pair...')
         public_key, secret_key = self.sike_api.generate_key()
-        logging.debug('Generated public key: %s', public_key.hex())
-        logging.debug('Generated secret key: %s', secret_key.hex())
+        #logging.debug('Generated public key: %s', public_key.hex())
+        #logging.debug('Generated secret key: %s', secret_key.hex())
 
-        logging.debug('Sending public key...')
+        #logging.debug('Sending public key...')
         self.socket.send(public_key)
 
-        logging.debug('Waiting for cypher text response...')
+        #logging.debug('Waiting for cypher text response...')
         cyphertext_message = self.socket.recv(BUFFER_SIZE)
-        logging.debug('Recived cypher text message: %s', cyphertext_message.hex())
+        #logging.debug('Recived cypher text message: %s', cyphertext_message.hex())
         print('Decapsulating shared key...')
+        chat_bubble('info', 'Decapsulating shared key...')
         shared_secret = self.sike_api.decapsulate(secret_key, cyphertext_message)
         self.socket.send(EXCHANGE_CONFIRMATION)
         print('Key exchanged.')
-        logging.debug('Shared secret key is: %s', shared_secret.hex())
+        chat_bubble('info', 'Key exchanged.')
+        #logging.debug('Shared secret key is: %s', shared_secret.hex())
         return shared_secret
 
     def send_msg(self, text):
@@ -542,27 +555,27 @@ class Client(SendMessageBase):
         aes = None
         self.socket.connect((destination, port))
         print('Connected with server')
+        chat_bubble('info', 'Connected with server')
         print("Authorization in progress...")
+        chat_bubble('info', 'Authorization in progress...')
         auth_key = load_auth_key()
-        logging.debug("Client key OK hash:")
-        logging.debug(auth_key)
+        #logging.debug("Client key OK hash:")
+        #logging.debug(auth_key)
         self.socket.send(bytes(auth_key, ENCODING))
-        logging.debug("C key sent")
+        #logging.debug("C key sent")
         if str(self.socket.recv(BUFFER_SIZE), ENCODING) != "200":
-            print("Authorization filed, closing connection")
+            print("Authorization failed, closing connection")
+            chat_bubble('info', 'Authorization failed')
             exit(-1)
         else:
             print("Authorization successful")
+            chat_bubble('info', 'Authorization successful')
 
         if self.is_secure:
             self.key = self.key_exchange()
             save_auth_key(self.key)
             aes = AES.new(self.key, AES.MODE_CBC, IV=self.key[:16])
 
-        '''
-        input_thread = threading.Thread(target=self._send_message, args=[self.socket])
-        input_thread.daemon = True
-        input_thread.start()'''
 
         try:
             while True:
@@ -570,16 +583,18 @@ class Client(SendMessageBase):
                 if not raw_data:
                     break
                 if self.is_secure:
-                    logging.debug('Received encrypted message: %s', raw_data.hex())
+                    #logging.debug('Received encrypted message: %s', raw_data.hex())
                     decrypted_data = remove_padding(str(aes.decrypt(raw_data), ENCODING))
                     chat_bubble("2", decrypted_data)
-                    _print(decrypted_data)
+                    #_print(decrypted_data)
                 else:
+                    chat_bubble('2', str(raw_data))
                     _print(raw_data)
         except KeyboardInterrupt:
             pass
 
         self.socket.close()
         print('Connection closed.')
+        chat_bubble('info', 'Connection closed')
 
 
