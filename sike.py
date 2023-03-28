@@ -7,7 +7,7 @@ PUBLIC_KEY_BYTES = 564
 SHARED_SECRET_BYTES = 32
 CIPHERTEXT_MESSAGE_BYTES = 596
 
-SIKE_LIB_PATH = "./comunication/lib751_x64_fast.so"
+SIKE_LIB_PATH = "./lib751_x64_fast.so"
 
 
 class CtypeSikeApi:
