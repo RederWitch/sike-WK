@@ -15,9 +15,6 @@ import sike as sike
 WORK_MODE = None
 
 IP_ADD_INPUT = None
-ADDR_IP = None
-PORT = None
-KEY_PATH = None
 
 TEXT_VIEW = None
 SOCKET = None
@@ -265,16 +262,13 @@ class ConnectFrame(PanelFrame):
 
     def star_button_action(self):
         # TODO zedytować niepotrzebne globalne
-        global ADDR_IP
-        ADDR_IP = self.addr_ip.get()
-        global PORT
+        addr_ip = self.addr_ip.get()
         if len(self.port.get()) != 0:
-            PORT = self.port.get()
-        global KEY_PATH
-        KEY_PATH = self.key_path
+            port_connect = self.port.get()
+        external_key = self.key_path
         global TEXT_VIEW
 
-        thread_comm = Thread(target=try_connect, args=(WORK_MODE, KEY_PATH, PORT, ADDR_IP,))
+        thread_comm = Thread(target=try_connect, args=(WORK_MODE, external_key, port_connect, addr_ip,))
         thread_comm.start()
 
         self.controller.show_frame(ConnectFrame, ChatFrame)
@@ -337,22 +331,22 @@ class ChatFrame(PanelFrame):
         SOCKET.send_msg(text)
 
 
-def server_side(server_port):
+def server_side(server_port, external_key):
     global SOCKET
     SOCKET = Server(secure=True)
     try:
-        SOCKET.start(port=server_port)
+        SOCKET.start(external_key=external_key, port=server_port)
     except (Exception, KeyboardInterrupt) as e:
         print(e)
         SOCKET.socket.close()
         print('Connection closed.')
 
 
-def client_side(destination, port):
+def client_side(destination, port, external_key):
     global SOCKET
     SOCKET = Client(secure=True)
     try:
-        SOCKET.connect(destination, port)
+        SOCKET.connect(destination, port, external_key)
     except (Exception, KeyboardInterrupt) as e:
         SOCKET.socket.close()
         print('Connection closed.')
@@ -360,15 +354,13 @@ def client_side(destination, port):
 
 
 def try_connect(mode: str, key_file, port, address=None):
-    global FILENAME
-    FILENAME = key_file
     if not port:
         port = 8888
     if mode == "server":
-        server_side(int(port))
+        server_side(int(port), key_file)
     elif mode == "client":
         if port and address:
-            client_side(address, int(port))
+            client_side(address, int(port), key_file)
         else:
             raise Exception()
     else:
@@ -387,10 +379,9 @@ def remove_padding(s: str):
     return s.replace('~', '')
 
 
-def load_auth_key():
-    filename = FILENAME
+def load_auth_key(external_key):
     sha256 = hashlib.sha256()
-    with open(filename, 'rb') as f:
+    with open(external_key, 'rb') as f:
         while True:
             data = f.read(BUFFER_SIZE)
             if not data:
@@ -399,9 +390,8 @@ def load_auth_key():
     return sha256.hexdigest()
 
 
-def save_auth_key(new_auth_key):
-    filename = FILENAME
-    f = open(filename, "wb")
+def save_auth_key(new_auth_key, external_key):
+    f = open(external_key, "wb")
     f.write(new_auth_key)
     f.close()
     print('Key saved')
@@ -464,7 +454,7 @@ class Server(SendMessageBase):
     def send_msg(self, text):
         self._send_message(self.connection, text)
 
-    def start(self, port):
+    def start(self, external_key, port):
         self.socket.bind(('', port))
         print('Listening on port %d...', port)
         chat_bubble('info', 'Listening on port ' + str(port) + '...')
@@ -482,7 +472,7 @@ class Server(SendMessageBase):
             chat_bubble('info', 'Connected by ' + str(addr[0]))
             print("Authorization in progress...")
             chat_bubble('info', 'Authorization in progress...')
-            server_auth_key = load_auth_key()
+            server_auth_key = load_auth_key(external_key)
             # logging.debug("Server key OK hash:")
             # logging.debug(server_auth_key)
             client_auth_key = str(self.connection.recv(BUFFER_SIZE), ENCODING)
@@ -499,7 +489,7 @@ class Server(SendMessageBase):
             aes = None
             if self.is_secure:
                 self.key = self.key_exchange()
-                save_auth_key(self.key)
+                save_auth_key(self.key, external_key)
                 aes = AES.new(self.key, AES.MODE_CBC, IV=self.key[:16])
             try:
                 while True:
@@ -560,14 +550,14 @@ class Client(SendMessageBase):
     def send_msg(self, text):
         self._send_message(self.socket, text)
 
-    def connect(self, destination, port):
+    def connect(self, destination, port, external_key):
         aes = None
         self.socket.connect((destination, port))
         print('Connected with server')
         chat_bubble('info', 'Connected with server')
         print("Authorization in progress...")
         chat_bubble('info', 'Authorization in progress...')
-        auth_key = load_auth_key()
+        auth_key = load_auth_key(external_key)
         # logging.debug("Client key OK hash:")
         # logging.debug(auth_key)
         self.socket.send(bytes(auth_key, ENCODING))
@@ -582,7 +572,7 @@ class Client(SendMessageBase):
 
         if self.is_secure:
             self.key = self.key_exchange()
-            save_auth_key(self.key)
+            save_auth_key(self.key, external_key)
             aes = AES.new(self.key, AES.MODE_CBC, IV=self.key[:16])
 
         try:
