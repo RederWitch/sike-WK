@@ -38,6 +38,7 @@ def chat_bubble(sender, text: str, text_view):
 
     text_view.config(state='disabled')
 
+
 class GlobalData():
     work_mode = None
 
@@ -50,6 +51,7 @@ class GlobalData():
 
 class App(tk.Tk):
     global_data = GlobalData()
+
     def __init__(self):
         super().__init__()
         self.title('Communicator')
@@ -170,11 +172,11 @@ class PanelFrame(ttk.Frame):
         input_frame = ttk.Frame(container, style='TFrame')
         ttk.Label(input_frame, text=input_label).pack(fill='x', expand=True, pady=3)
         entry = ttk.Entry(input_frame,
-                  textvariable=input_holder,
-                  width=26,
-                  style='TEntry',
-                  font=('Roboto', 14)
-                  )
+                          textvariable=input_holder,
+                          width=26,
+                          style='TEntry',
+                          font=('Roboto', 14)
+                          )
         entry.pack(fill='x', expand=True)
         if return_entry:
             return input_frame, entry
@@ -216,7 +218,6 @@ class StartFrame(PanelFrame):
             self.controller.show_frame(StartFrame, ConnectFrame)
 
 
-
 class ConnectFrame(PanelFrame):
     def __init__(self, container, controller, global_data):
         super().__init__(container, controller, 'Enter data')
@@ -225,7 +226,8 @@ class ConnectFrame(PanelFrame):
         self.port = tk.StringVar()
         self.key_path = tk.StringVar()
         self.select_file_img = tk.PhotoImage(file='./assets/icons8-share-rounded-90.png').subsample(3, 3)
-        ip_addr_input, self.global_data.ip_add_input = self.create_text_input(self, "Address IP", self.addr_ip, return_entry=True)
+        ip_addr_input, self.global_data.ip_add_input = self.create_text_input(self, "Address IP", self.addr_ip,
+                                                                              return_entry=True)
         ip_addr_input.pack(side="top", fill="x", pady=5, padx=85)
         self.create_text_input(self, "Port", self.port).pack(side="top", fill="x", pady=5, padx=85)
 
@@ -276,7 +278,8 @@ class ConnectFrame(PanelFrame):
             if self.global_data.work_mode == "client":
                 if not port_connect:
                     return
-            self.global_data.thread = Thread(target=try_connect, args=(self.global_data.work_mode, external_key, port_connect, self.global_data, addr_ip,))
+            self.global_data.thread = Thread(target=try_connect, args=(
+            self.global_data.work_mode, external_key, port_connect, self.global_data, addr_ip,))
             self.global_data.thread.daemon = True
             self.global_data.thread.start()
             self.controller.show_frame(ConnectFrame, ChatFrame)
@@ -372,6 +375,7 @@ def try_connect(mode: str, key_file, port, global_data, address=None):
             raise Exception()
     else:
         print("Error")
+
 
 def padding(s):
     return s + (((8 - len(s) % 8) - 1) * '~')
