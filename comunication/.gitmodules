@@ -1,3 +1,0 @@
-[submodule "sidh"]
-	path = sidh
-	url = https://github.com/microsoft/PQCrypto-SIDH

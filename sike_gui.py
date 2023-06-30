@@ -3,44 +3,53 @@ from tkinter import ttk
 from tkinter import filedialog as fd, messagebox, Scrollbar, Text
 from threading import Thread
 import argparse
-import logging
 import socket
 import sys
 import threading
 import hashlib
 from Crypto.Cipher import AES
 
-import comunication.sike as sike
+import sike as sike
 
-WORK_MODE = None
+BUFFER_SIZE = 1024
+ENCODING = 'utf-16'
 
-ADDR_IP = None
-PORT = None
-KEY_PATH = None
+CURSOR_UP_ONE = '\x1b[1A'
+ERASE_LINE = '\x1b[2K'
+NEW_LINE = '\n'
+PRE_TEXT = NEW_LINE + CURSOR_UP_ONE + ERASE_LINE
+EXCHANGE_CONFIRMATION = b'***CONFIRMED_EXCHANGE****'
 
-TEXT_VIEW = None
-SOCET=None
 
 def frame_changer(frame_name):
     frame_name.tkraise()
 
 
-def chat_bubble(sender, text: str):
-    global TEXT_VIEW
-    TEXT_VIEW.config(state='normal')
+def chat_bubble(sender, text: str, text_view):
+    text_place = '1.0'
+    text_view.config(state='normal')
+    text_view.insert(text_place, "\n>" + text)
     if sender == "me":
-        TEXT_VIEW.insert('end', "\n\n\tME -->")
+        text_view.insert(text_place, "\n\n\tME -->")
+    elif sender == "info":
+        text_view.insert(text_place, "\n\n\tINFO-->")
     else:
-        TEXT_VIEW.insert('end', "\n\tBOB-->")
-    TEXT_VIEW.insert('end', "\n" + text)
-    TEXT_VIEW.config(state='disabled')
+        text_view.insert(text_place, "\n\n\tBOB-->")
 
+    text_view.config(state='disabled')
 
-def send_message():
-    pass
+class GlobalData():
+    work_mode = None
+
+    ip_add_input = None
+    thread = None
+
+    text_view = None
+    socket = None
 
 
 class App(tk.Tk):
+    global_data = GlobalData()
     def __init__(self):
         super().__init__()
         self.title('Communicator')
@@ -110,7 +119,7 @@ class App(tk.Tk):
         # iterating through a tuple consisting
         # of the different page layouts
         for F in (StartFrame, ConnectFrame, ChatFrame):
-            frame = F(container, self)
+            frame = F(container, self, self.global_data)
 
             # initializing frame of that object from
             # startpage, page1, page2 respectively with
@@ -138,6 +147,12 @@ class App(tk.Tk):
             pady=105
         )
 
+    def on_close(self):
+        if self.global_data.socket:
+            self.global_data.socket.socket.close()
+        self.destroy()
+        sys.exit()
+
 
 class PanelFrame(ttk.Frame):
     def __init__(self, container, controller, title: str):
@@ -151,22 +166,27 @@ class PanelFrame(ttk.Frame):
         button = ttk.Button(container, text=button_label, style='TButton')
         return button
 
-    def create_text_input(self, container, input_label: str, input_holder: tk.StringVar):
+    def create_text_input(self, container, input_label: str, input_holder: tk.StringVar, return_entry=False):
         input_frame = ttk.Frame(container, style='TFrame')
         ttk.Label(input_frame, text=input_label).pack(fill='x', expand=True, pady=3)
-        ttk.Entry(input_frame,
+        entry = ttk.Entry(input_frame,
                   textvariable=input_holder,
                   width=26,
                   style='TEntry',
                   font=('Roboto', 14)
-                  ).pack(fill='x', expand=True)
-        return input_frame
+                  )
+        entry.pack(fill='x', expand=True)
+        if return_entry:
+            return input_frame, entry
+        else:
+            return input_frame
 
 
 class StartFrame(PanelFrame):
-    def __init__(self, container, controller):
+    def __init__(self, container, controller, global_data):
         super().__init__(container, controller, 'Chose mode')
         self.selected_mode = tk.StringVar()
+        self.global_data = global_data
 
         s = ttk.Radiobutton(
             self,
@@ -188,20 +208,25 @@ class StartFrame(PanelFrame):
         button_start.pack(side="top", fill="x", pady=45, padx=190, )
 
     def star_button_action(self):
-        global WORK_MODE
-        WORK_MODE = self.selected_mode.get()
-        self.controller.show_frame(StartFrame, ConnectFrame)
+        work_mode = self.selected_mode.get()
+        self.global_data.work_mode = work_mode
+        if work_mode == 'server':
+            self.global_data.ip_add_input.config(state='disable')
+        if work_mode:
+            self.controller.show_frame(StartFrame, ConnectFrame)
+
 
 
 class ConnectFrame(PanelFrame):
-    def __init__(self, container, controller):
+    def __init__(self, container, controller, global_data):
         super().__init__(container, controller, 'Enter data')
+        self.global_data = global_data
         self.addr_ip = tk.StringVar()
         self.port = tk.StringVar()
         self.key_path = tk.StringVar()
         self.select_file_img = tk.PhotoImage(file='./assets/icons8-share-rounded-90.png').subsample(3, 3)
-
-        self.create_text_input(self, "Address IP", self.addr_ip).pack(side="top", fill="x", pady=5, padx=85)
+        ip_addr_input, self.global_data.ip_add_input = self.create_text_input(self, "Address IP", self.addr_ip, return_entry=True)
+        ip_addr_input.pack(side="top", fill="x", pady=5, padx=85)
         self.create_text_input(self, "Port", self.port).pack(side="top", fill="x", pady=5, padx=85)
 
         self.create_file_input().pack(side="top", fill="x", pady=3, padx=85)
@@ -240,24 +265,27 @@ class ConnectFrame(PanelFrame):
         return input_frame
 
     def star_button_action(self):
-        global ADDR_IP
-        ADDR_IP = self.addr_ip.get()
-        global PORT
+        # TODO zedytować niepotrzebne globalne
+        addr_ip = self.addr_ip.get()
+        port_connect = None
         if len(self.port.get()) != 0:
-            PORT = self.port.get()
-        global KEY_PATH
-        KEY_PATH = self.key_path
-        global TEXT_VIEW
+            port_connect = self.port.get()
+        external_key = self.key_path
 
-        thread_comm = Thread(target=try_connect, args=(WORK_MODE, KEY_PATH, PORT, ADDR_IP,))
-        thread_comm.start()
-
-        self.controller.show_frame(ConnectFrame, ChatFrame)
+        if addr_ip is not None and external_key is not None:
+            if self.global_data.work_mode == "client":
+                if not port_connect:
+                    return
+            self.global_data.thread = Thread(target=try_connect, args=(self.global_data.work_mode, external_key, port_connect, self.global_data, addr_ip,))
+            self.global_data.thread.daemon = True
+            self.global_data.thread.start()
+            self.controller.show_frame(ConnectFrame, ChatFrame)
 
 
 class ChatFrame(PanelFrame):
-    def __init__(self, container, controller):
+    def __init__(self, container, controller, global_data):
         super().__init__(container, controller, 'ChatRoom')
+        self.global_data = global_data
         # noinspection PyStatementEffect
         self.msg_to_send = tk.StringVar()
         self.select_file_img = tk.PhotoImage(file='./assets/icons8-send-96.png').subsample(3, 3)
@@ -285,8 +313,7 @@ class ChatFrame(PanelFrame):
 
         text_box.config(yscrollcommand=scrollbar.set)
         scrollbar.config(command=text_box.yview)
-        global TEXT_VIEW
-        TEXT_VIEW = text_box
+        self.global_data.text_view = text_box
 
         input_send_frame = ttk.Frame(all_frame, style='TFrame')
         input_send_frame.pack(side="bottom", fill="x", expand=True)
@@ -306,68 +333,45 @@ class ChatFrame(PanelFrame):
 
     def send_button_action(self):
         text = self.msg_to_send.get()
-        chat_bubble("me", text)
-        global SOCET
-        SOCET.send_msg(text)
+        self.msg_to_send.set("")
+        chat_bubble("me", text, self.global_data.text_view)
+        self.global_data.socket.send_msg(text)
 
 
-
-def server_side(server_port):
-    global SOCET
-    SOCET = Server(secure=True)
+def server_side(server_port, external_key, global_data):
+    server_socket = Server(global_data.text_view, secure=True)
+    global_data.socket = server_socket
     try:
-        SOCET.start(port=server_port)
+        server_socket.start(external_key=external_key, port=server_port)
     except (Exception, KeyboardInterrupt) as e:
         print(e)
-        SOCET.socket.close()
-        print('Connection closed.')
+        server_socket.socket.close()
+        chat_bubble('info', 'Connection closed', global_data.text_view)
 
 
-def client_side(destination, port):
-    global SOCET
-    SOCET = Client(secure=True)
+def client_side(destination, port, external_key, global_data):
+    client_socket = Client(global_data.text_view, secure=True)
+    global_data.socket = client_socket
     try:
-        SOCET.connect(destination, port)
+        client_socket.connect(destination, port, external_key)
     except (Exception, KeyboardInterrupt) as e:
-        SOCET.socket.close()
-        print('Connection closed.')
+        client_socket.socket.close()
+        chat_bubble('info', 'Connection closed', global_data.text_view)
         raise
 
 
-def try_connect(mode: str, key_file, port, address=None):
-    global FILENAME
-    FILENAME = key_file
+def try_connect(mode: str, key_file, port, global_data, address=None):
     if not port:
         port = 8888
     if mode == "server":
-        server_side(int(port))
+        server_side(int(port), key_file, global_data)
     elif mode == "client":
         if port and address:
-            client_side(address, int(port))
+            client_side(address, int(port), key_file, global_data)
         else:
             raise Exception()
     else:
         print("Error")
-
-
-
-BUFFER_SIZE = 1024
-ENCODING = 'utf-16'
-
-CURSOR_UP_ONE = '\x1b[1A'
-ERASE_LINE = '\x1b[2K'
-NEW_LINE = '\n'
-
-PRE_TEXT = NEW_LINE + CURSOR_UP_ONE + ERASE_LINE
-
-EXCHANGE_CONFIRMATION = b'***CONFIRMED_EXCHANGE****'
-
-FILENAME = ""
-
-
-def _print(raw_data):
-    print(PRE_TEXT + '>' + raw_data)
-
 
 def padding(s):
     return s + (((8 - len(s) % 8) - 1) * '~')
@@ -377,10 +381,9 @@ def remove_padding(s: str):
     return s.replace('~', '')
 
 
-def load_auth_key():
-    filename = FILENAME
+def load_auth_key(external_key):
     sha256 = hashlib.sha256()
-    with open(filename, 'rb') as f:
+    with open(external_key, 'rb') as f:
         while True:
             data = f.read(BUFFER_SIZE)
             if not data:
@@ -389,16 +392,14 @@ def load_auth_key():
     return sha256.hexdigest()
 
 
-def save_auth_key(new_auth_key):
-    filename = FILENAME
-    f = open(filename, "wb")
+def save_auth_key(new_auth_key, external_key):
+    f = open(external_key, "wb")
     f.write(new_auth_key)
     f.close()
-    print('Key saved')
 
 
 class SendMessageBase:
-    def _send_message(self, socket, text,):
+    def _send_message(self, socket, text, ):
         if not self.aes:
             self.aes = AES.new(self.key, AES.MODE_CBC, IV=self.key[:16])
         raw_data = text
@@ -407,8 +408,6 @@ class SendMessageBase:
 
                 data = padding(raw_data).encode(ENCODING)
                 encrypted_data = self.aes.encrypt(data)
-                logging.debug('Sending encrypted message: \n%s\n key: %s', encrypted_data,
-                              self.key)
                 socket.send(bytes(encrypted_data))
             else:
                 socket.send(bytes(raw_data, ENCODING))
@@ -416,99 +415,91 @@ class SendMessageBase:
 
 class Server(SendMessageBase):
     def __init__(self,
+                 chat_text_box,
                  socket_family=socket.AF_INET,
                  socket_type=socket.SOCK_STREAM,
                  secure=True
                  ):
+        self.chat_text_box = chat_text_box
         self.socket = socket.socket(socket_family, socket_type)
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.connection = None
-        self.aes = None
         self.key = 'Sixteen byte key'
+        self.aes = None
         self.is_secure = secure
         self.sike_api = sike.CtypeSikeApi()
 
     def key_exchange(self):
-        print('Exchanging key...')
-        logging.debug('Waiting for public key response...')
+        chat_bubble('info', 'Exchanging key...', self.chat_text_box)
         public_key = self.connection.recv(BUFFER_SIZE)
-        logging.debug('Reviced public key: %s', public_key.hex())
-        print('Encapsulating key...')
+        chat_bubble('info', 'Encapsulating key...', self.chat_text_box)
         shared_secret, ciphertext = self.sike_api.encapsulate(public_key)
-        print('Sending cypher text message...')
+        chat_bubble('info', 'Sending cypher text message...', self.chat_text_box)
         self.connection.sendall(ciphertext)
-        print('Waiting for confirmation...')
+        chat_bubble('info', 'Waiting for confirmation...', self.chat_text_box)
         confirmation = self.connection.recv(BUFFER_SIZE)
         if not confirmation == EXCHANGE_CONFIRMATION:
             self.socket.close()
-        print('Key exchanged.')
-
-        logging.debug('Shared secret key is: %s', shared_secret.hex())
+        chat_bubble('info', 'Key exchanged.', self.chat_text_box)
         return shared_secret
 
     def send_msg(self, text):
         self._send_message(self.connection, text)
 
-    def start(self, port):
+    def start(self, external_key, port):
         self.socket.bind(('', port))
-        print('Listening on port %d...', port)
+        chat_bubble('info', 'Listening on port ' + str(port) + '...', self.chat_text_box)
         self.socket.listen()
         try:
             self.connection, addr = self.socket.accept()
         except KeyboardInterrupt:
             self.socket.close()
-            print('Connection closed.')
+            chat_bubble('info', 'Connection closed', self.chat_text_box)
             sys.exit(1)
 
         with self.connection:
-            print('Connected by %s', addr[0])
-            print("Authorization in progress...")
-            server_auth_key = load_auth_key()
-            logging.debug("Server key OK hash:")
-            logging.debug(server_auth_key)
+            chat_bubble('info', 'Connected by ' + str(addr[0]), self.chat_text_box)
+            chat_bubble('info', 'Authorization in progress...', self.chat_text_box)
+            server_auth_key = load_auth_key(external_key)
             client_auth_key = str(self.connection.recv(BUFFER_SIZE), ENCODING)
-            logging.debug("Client key recived")
             if server_auth_key != client_auth_key:
-                print('Authorization failed, closing connection')
+                chat_bubble('info', 'Authorization failed', self.chat_text_box)
                 exit(-1)
             else:
-                print('Authorization successful')
+                chat_bubble('info', 'Authorization successful', self.chat_text_box)
                 self.connection.send(bytes('200', ENCODING))
 
             aes = None
             if self.is_secure:
                 self.key = self.key_exchange()
-                save_auth_key(self.key)
+                save_auth_key(self.key, external_key)
+                chat_bubble('info', "Key saved", self.chat_text_box)
                 aes = AES.new(self.key, AES.MODE_CBC, IV=self.key[:16])
-            '''
-            input_thread = threading.Thread(target=self._send_message, args=[self.connection])
-            input_thread.daemon = True
-            input_thread.start()'''
             try:
                 while True:
                     raw_data = self.connection.recv(BUFFER_SIZE)
                     if self.is_secure:
-                        logging.debug('Received encrypted message: %s', raw_data)
                         decrypted_data = remove_padding(str(aes.decrypt(raw_data), ENCODING))
-                        chat_bubble("2", decrypted_data)
-                        _print(decrypted_data)
+                        chat_bubble("2", decrypted_data, self.chat_text_box)
                     else:
-                        _print(raw_data)
+                        chat_bubble('2', str(raw_data), self.chat_text_box)
                     if not raw_data:
                         break
             except KeyboardInterrupt:
                 pass
         self.socket.close()
-        print('Connection closed.')
+        chat_bubble('info', 'Connection closed', self.chat_text_box)
 
 
 class Client(SendMessageBase):
 
     def __init__(self,
+                 chat_text_box,
                  socket_family=socket.AF_INET,
                  socket_type=socket.SOCK_STREAM,
                  secure=True,
                  ):
+        self.chat_text_box = chat_text_box
         self.socket = socket.socket(socket_family, socket_type)
         self.key = 'Sixteen byte key'
         self.aes = None
@@ -516,53 +507,38 @@ class Client(SendMessageBase):
         self.sike_api = sike.CtypeSikeApi()
 
     def key_exchange(self):
-        print('Exchanging key...')
-        logging.debug('Generating key pair...')
+        chat_bubble('info', 'Exchanging key', self.chat_text_box)
         public_key, secret_key = self.sike_api.generate_key()
-        logging.debug('Generated public key: %s', public_key.hex())
-        logging.debug('Generated secret key: %s', secret_key.hex())
-
-        logging.debug('Sending public key...')
         self.socket.send(public_key)
 
-        logging.debug('Waiting for cypher text response...')
         cyphertext_message = self.socket.recv(BUFFER_SIZE)
-        logging.debug('Recived cypher text message: %s', cyphertext_message.hex())
-        print('Decapsulating shared key...')
+        chat_bubble('info', 'Decapsulating shared key...', self.chat_text_box)
         shared_secret = self.sike_api.decapsulate(secret_key, cyphertext_message)
         self.socket.send(EXCHANGE_CONFIRMATION)
-        print('Key exchanged.')
-        logging.debug('Shared secret key is: %s', shared_secret.hex())
+        chat_bubble('info', 'Key exchanged.', self.chat_text_box)
         return shared_secret
 
     def send_msg(self, text):
         self._send_message(self.socket, text)
 
-    def connect(self, destination, port):
+    def connect(self, destination, port, external_key):
         aes = None
         self.socket.connect((destination, port))
-        print('Connected with server')
-        print("Authorization in progress...")
-        auth_key = load_auth_key()
-        logging.debug("Client key OK hash:")
-        logging.debug(auth_key)
+        chat_bubble('info', 'Connected with server', self.chat_text_box)
+        chat_bubble('info', 'Authorization in progress...', self.chat_text_box)
+        auth_key = load_auth_key(external_key)
         self.socket.send(bytes(auth_key, ENCODING))
-        logging.debug("C key sent")
         if str(self.socket.recv(BUFFER_SIZE), ENCODING) != "200":
-            print("Authorization filed, closing connection")
+            chat_bubble('info', 'Authorization failed', self.chat_text_box)
             exit(-1)
         else:
-            print("Authorization successful")
+            chat_bubble('info', 'Authorization successful', self.chat_text_box)
 
         if self.is_secure:
             self.key = self.key_exchange()
-            save_auth_key(self.key)
+            save_auth_key(self.key, external_key)
+            chat_bubble('info', "Key saved", self.chat_text_box)
             aes = AES.new(self.key, AES.MODE_CBC, IV=self.key[:16])
-
-        '''
-        input_thread = threading.Thread(target=self._send_message, args=[self.socket])
-        input_thread.daemon = True
-        input_thread.start()'''
 
         try:
             while True:
@@ -570,16 +546,12 @@ class Client(SendMessageBase):
                 if not raw_data:
                     break
                 if self.is_secure:
-                    logging.debug('Received encrypted message: %s', raw_data.hex())
                     decrypted_data = remove_padding(str(aes.decrypt(raw_data), ENCODING))
-                    chat_bubble("2", decrypted_data)
-                    _print(decrypted_data)
+                    chat_bubble("2", decrypted_data, self.chat_text_box)
                 else:
-                    _print(raw_data)
+                    chat_bubble('2', str(raw_data), self.chat_text_box)
         except KeyboardInterrupt:
             pass
 
         self.socket.close()
-        print('Connection closed.')
-
-
+        chat_bubble('info', 'Connection closed', self.chat_text_box)
