@@ -7,6 +7,7 @@ import socket
 import sys
 import threading
 import hashlib
+import secrets
 from Crypto.Cipher import AES
 
 import sike as sike
@@ -25,7 +26,7 @@ def frame_changer(frame_name):
     frame_name.tkraise()
 
 
-def chat_bubble(sender, text: str, text_view):
+def chat_bubble(sender, text, text_view):
     text_place = '1.0'
     text_view.config(state='normal')
     text_view.insert(text_place, "\n>" + text)
@@ -385,7 +386,7 @@ def remove_padding(s: str):
     return s.replace('~', '')
 
 
-def load_auth_key(external_key):
+'''def load_auth_key(external_key):
     sha256 = hashlib.sha256()
     with open(external_key, 'rb') as f:
         while True:
@@ -393,11 +394,38 @@ def load_auth_key(external_key):
             if not data:
                 break
             sha256.update(data)
+    return sha256.hexdigest()'''
+
+
+def generate_sol():
+    return secrets.token_bytes(32)
+
+
+def bitwise_xor_bytes(a, b):
+    result_int = int.from_bytes(a, byteorder="big") ^ int.from_bytes(b, byteorder="big")
+    return result_int.to_bytes(max(len(a), len(b)), byteorder="big")
+
+
+def generate_hash(key, sol):
+    sha256 = hashlib.sha256()
+    to_hash = bitwise_xor_bytes(key, sol)
+    sha256.update(to_hash)
     return sha256.hexdigest()
 
 
-def save_auth_key(new_auth_key, external_key):
-    f = open(external_key, "wb")
+def load_auth_key(external_key_file):
+    old_key = b''
+    with open(external_key_file, 'rb') as f:
+        while True:
+            data = f.read(BUFFER_SIZE)
+            if not data:
+                break
+            old_key = old_key + data
+    return old_key
+
+
+def save_auth_key(new_auth_key, external_key_file):
+    f = open(external_key_file, "wb")
     f.write(new_auth_key)
     f.close()
 
@@ -464,8 +492,17 @@ class Server(SendMessageBase):
         with self.connection:
             chat_bubble('info', 'Connected by ' + str(addr[0]), self.chat_text_box)
             chat_bubble('info', 'Authorization in progress...', self.chat_text_box)
-            server_auth_key = load_auth_key(external_key)
+
+            sol = generate_sol()
+            server_auth_key = generate_hash(load_auth_key(external_key), sol)
+
+            chat_bubble('info', 'Sending challenge...', self.chat_text_box)
+            self.connection.send(sol)
+
             client_auth_key = str(self.connection.recv(BUFFER_SIZE), ENCODING)
+
+            chat_bubble('info', 'Comparing keys...', self.chat_text_box)
+
             if server_auth_key != client_auth_key:
                 chat_bubble('info', 'Authorization failed', self.chat_text_box)
                 exit(-1)
@@ -530,7 +567,13 @@ class Client(SendMessageBase):
         self.socket.connect((destination, port))
         chat_bubble('info', 'Connected with server', self.chat_text_box)
         chat_bubble('info', 'Authorization in progress...', self.chat_text_box)
-        auth_key = load_auth_key(external_key)
+
+        chat_bubble('info', 'Waiting for challenge...', self.chat_text_box)
+
+        sol = self.socket.recv(BUFFER_SIZE)
+        auth_key = generate_hash(load_auth_key(external_key), sol)
+        chat_bubble('info', 'Challenge accepted. Sending key...', self.chat_text_box)
+
         self.socket.send(bytes(auth_key, ENCODING))
         if str(self.socket.recv(BUFFER_SIZE), ENCODING) != "200":
             chat_bubble('info', 'Authorization failed', self.chat_text_box)
