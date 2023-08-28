@@ -385,18 +385,6 @@ def padding(s):
 def remove_padding(s: str):
     return s.replace('~', '')
 
-
-'''def load_auth_key(external_key):
-    sha256 = hashlib.sha256()
-    with open(external_key, 'rb') as f:
-        while True:
-            data = f.read(BUFFER_SIZE)
-            if not data:
-                break
-            sha256.update(data)
-    return sha256.hexdigest()'''
-
-
 def generate_sol():
     return secrets.token_bytes(32)
 
