@@ -14,16 +14,7 @@ import sike as sike
 
 BUFFER_SIZE = 1024
 ENCODING = 'utf-16'
-
-CURSOR_UP_ONE = '\x1b[1A'
-ERASE_LINE = '\x1b[2K'
-NEW_LINE = '\n'
-PRE_TEXT = NEW_LINE + CURSOR_UP_ONE + ERASE_LINE
 EXCHANGE_CONFIRMATION = b'***CONFIRMED_EXCHANGE****'
-
-
-def frame_changer(frame_name):
-    frame_name.tkraise()
 
 
 def chat_bubble(sender, text, text_view):
@@ -40,7 +31,7 @@ def chat_bubble(sender, text, text_view):
     text_view.config(state='disabled')
 
 
-class GlobalData():
+class GlobalData:
     work_mode = None
 
     ip_add_input = None
@@ -57,7 +48,6 @@ class App(tk.Tk):
         super().__init__()
         self.title('Communicator')
 
-        # Style -> looks of widgets
         self.style = ttk.Style(self)
         self.style.configure('TFrame', background='white')
         self.style.configure('TLabel', background='white')
@@ -66,7 +56,6 @@ class App(tk.Tk):
             border=2,
             relief='SOLID',
             foreground='white',
-            # font=('Roboto', 14),
             background='#5D72E5'
 
         )
@@ -80,30 +69,22 @@ class App(tk.Tk):
                        )
         self.style.configure('TRadiobutton', background='white', font=("Roboto", 18, 'bold'), indicator=0)
 
-        # configure the root window
         window_width = 1200
         window_height = 800
 
-        # get the screen dimension
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
 
-        # find the center point
         center_x = int(screen_width / 2 - window_width / 2)
         center_y = int(screen_height / 2 - window_height / 2)
 
-        # set the position of the window to the center of the screen
         self.geometry(f"{window_width}x{window_height}+{center_x}+{center_y}")
         self.config(bg='#EDEDED')
-
-        # prevent from resizing
         self.resizable(True, True)
 
-        # icon
         icon = tk.PhotoImage(file="./assets/sike_icon.png")
         self.wm_iconphoto(False, icon)
 
-        # Always visible header
         header_frame = ttk.Frame(self, height=70, width=1200)
         header_frame['style'] = 'TFrame'
         header_frame.pack(fill='x', ipady=18)
@@ -112,23 +93,13 @@ class App(tk.Tk):
         header_title.configure(font=("Roboto", 36))
         header_title.pack(side='left', padx=10, fill='x')
 
-        # creating a container
         container = tk.Frame(self)
         container.pack(side="top", fill="both", expand=True)
 
-        # initializing frames to an empty array
         self.frames = {}
-
-        # iterating through a tuple consisting
-        # of the different page layouts
         for F in (StartFrame, ConnectFrame, ChatFrame):
             frame = F(container, self, self.global_data)
-
-            # initializing frame of that object from
-            # startpage, page1, page2 respectively with
-            # for loop
             self.frames[F] = frame
-
             frame.pack(
                 ipadx=500,
                 padx=350,
@@ -136,9 +107,6 @@ class App(tk.Tk):
             )
 
         self.frames[StartFrame].tkraise()
-
-        # to display the current frame passed as
-        # parameter
 
     def show_frame(self, present, cont):
         self.frames[present].forget()
@@ -268,7 +236,6 @@ class ConnectFrame(PanelFrame):
         return input_frame
 
     def star_button_action(self):
-        # TODO zedytować niepotrzebne globalne
         addr_ip = self.addr_ip.get()
         port_connect = None
         if len(self.port.get()) != 0:
@@ -323,7 +290,6 @@ class ChatFrame(PanelFrame):
         input_send_frame.pack(side="bottom", fill="x", expand=True)
         ttk.Entry(input_send_frame,
                   textvariable=self.msg_to_send,
-                  # width=26,
                   style='TEntry',
                   font=('Roboto', 14)
                   ).pack(fill='x', expand=True, side="left")
@@ -385,6 +351,7 @@ def padding(s):
 def remove_padding(s: str):
     return s.replace('~', '')
 
+
 def generate_sol():
     return secrets.token_bytes(32)
 
@@ -431,6 +398,43 @@ class SendMessageBase:
                 socket.send(bytes(encrypted_data))
             else:
                 socket.send(bytes(raw_data, ENCODING))
+
+    def auth_for_challenger(self, socket, challenger, external_key):
+        chat_bubble('info', f'Authentication by {challenger} in progress...', self.chat_text_box)
+
+        sol = generate_sol()
+        server_auth_key = generate_hash(load_auth_key(external_key), sol)
+
+        chat_bubble('info', 'Sending challenge...', self.chat_text_box)
+        socket.send(sol)
+
+        client_auth_key = str(socket.recv(BUFFER_SIZE), ENCODING)
+
+        chat_bubble('info', 'Comparing keys...', self.chat_text_box)
+
+        if server_auth_key != client_auth_key:
+            chat_bubble('info', f'Authentication by {challenger} failed', self.chat_text_box)
+            exit(-1)
+        else:
+            chat_bubble('info', f'Authentication by {challenger} successful', self.chat_text_box)
+            socket.send(bytes('200', ENCODING))
+        return
+
+    def auth_for_challenged(self, socket, challenger, external_key):
+        chat_bubble('info', f'Authentication by {challenger} in progress...', self.chat_text_box)
+        chat_bubble('info', 'Waiting for challenge...', self.chat_text_box)
+
+        sol = socket.recv(BUFFER_SIZE)
+        auth_key = generate_hash(load_auth_key(external_key), sol)
+        chat_bubble('info', f'Challenge from {challenger} accepted. Sending key...', self.chat_text_box)
+
+        socket.send(bytes(auth_key, ENCODING))
+        if str(socket.recv(BUFFER_SIZE), ENCODING) != "200":
+            chat_bubble('info', f'Authentication by {challenger} failed', self.chat_text_box)
+            exit(-1)
+        else:
+            chat_bubble('info', f'Authentication by {challenger} successful', self.chat_text_box)
+        return
 
 
 class Server(SendMessageBase):
@@ -479,24 +483,8 @@ class Server(SendMessageBase):
 
         with self.connection:
             chat_bubble('info', 'Connected by ' + str(addr[0]), self.chat_text_box)
-            chat_bubble('info', 'Authorization in progress...', self.chat_text_box)
-
-            sol = generate_sol()
-            server_auth_key = generate_hash(load_auth_key(external_key), sol)
-
-            chat_bubble('info', 'Sending challenge...', self.chat_text_box)
-            self.connection.send(sol)
-
-            client_auth_key = str(self.connection.recv(BUFFER_SIZE), ENCODING)
-
-            chat_bubble('info', 'Comparing keys...', self.chat_text_box)
-
-            if server_auth_key != client_auth_key:
-                chat_bubble('info', 'Authorization failed', self.chat_text_box)
-                exit(-1)
-            else:
-                chat_bubble('info', 'Authorization successful', self.chat_text_box)
-                self.connection.send(bytes('200', ENCODING))
+            self.auth_for_challenger(self.connection, "Server", external_key)
+            self.auth_for_challenged(self.connection, "Client", external_key)
 
             aes = None
             if self.is_secure:
@@ -554,20 +542,9 @@ class Client(SendMessageBase):
         aes = None
         self.socket.connect((destination, port))
         chat_bubble('info', 'Connected with server', self.chat_text_box)
-        chat_bubble('info', 'Authorization in progress...', self.chat_text_box)
 
-        chat_bubble('info', 'Waiting for challenge...', self.chat_text_box)
-
-        sol = self.socket.recv(BUFFER_SIZE)
-        auth_key = generate_hash(load_auth_key(external_key), sol)
-        chat_bubble('info', 'Challenge accepted. Sending key...', self.chat_text_box)
-
-        self.socket.send(bytes(auth_key, ENCODING))
-        if str(self.socket.recv(BUFFER_SIZE), ENCODING) != "200":
-            chat_bubble('info', 'Authorization failed', self.chat_text_box)
-            exit(-1)
-        else:
-            chat_bubble('info', 'Authorization successful', self.chat_text_box)
+        self.auth_for_challenged(self.socket, "Client", external_key)
+        self.auth_for_challenger(self.socket, "Client", external_key)
 
         if self.is_secure:
             self.key = self.key_exchange()
